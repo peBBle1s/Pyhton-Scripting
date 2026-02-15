@@ -1,0 +1,13 @@
+{
+    "Gaming": {
+        "discord.exe": "HEADSET_DEVICE_ID",
+        "chrome.exe": "SPEAKERS_DEVICE_ID"
+    },
+    "Work": {
+        "msedge.exe": "SPEAKERS_DEVICE_ID",
+        "teams.exe": "HEADSET_DEVICE_ID"
+    },
+    "Meeting": {
+        "zoom.exe": "HEADSET_DEVICE_ID"
+    }
+}
