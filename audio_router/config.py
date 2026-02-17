@@ -1,6 +1,6 @@
 import os
 
-APP_NAME = "peBBle Audio Router"
+APP_NAME = "PebX Audio Router"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 

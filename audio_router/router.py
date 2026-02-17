@@ -4,32 +4,25 @@ from config import SOUND_VOLUME_VIEW, DEVICES_FILE
 
 
 def scan_output_devices():
-    """
-    Returns dictionary:
-    {
-        "Device Name": "Device ID"
-    }
-    """
-
     devices = {}
 
     try:
-        # Generate devices.csv
         subprocess.run(
             [SOUND_VOLUME_VIEW, "/scomma", DEVICES_FILE],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
 
-        # Read CSV
-        with open(DEVICES_FILE, newline="", encoding="utf-8") as csvfile:
+        with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as csvfile:
             reader = csv.DictReader(csvfile)
 
             for row in reader:
-                if row["Type"] == "Device" and row["Direction"] == "Render":
-                    name = row["Name"]
-                    device_id = row["Item ID"]
-                    devices[name] = device_id
+                if row.get("Type") == "Device" and row.get("Direction") == "Render":
+                    name = row.get("Name")
+                    device_id = row.get("Item ID")
+
+                    if name and device_id:
+                        devices[name] = device_id
 
     except Exception as e:
         print("Device scan error:", e)
