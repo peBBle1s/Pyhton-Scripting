@@ -1,5 +1,5 @@
-from gui import AudioRouterGUI
+from gui import PebXGUI
 
 if __name__ == "__main__":
-    app = AudioRouterGUI()
+    app = PebXGUI()
     app.mainloop()

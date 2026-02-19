@@ -1,6 +1,12 @@
 import customtkinter as ctk
-from router import scan_output_devices, set_default_device
-from profiles import save_profile, load_profiles, get_profile
+from router import (
+    scan_output_devices,
+    scan_audio_apps,
+    set_default_device,
+    set_app_device,
+    toggle_mute,
+    open_windows_audio_settings
+)
 from config import APP_NAME
 
 
@@ -8,127 +14,141 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 
-class AudioRouterGUI(ctk.CTk):
+class PebXGUI(ctk.CTk):
 
     def __init__(self):
         super().__init__()
 
         self.title(APP_NAME)
-        self.geometry("650x450")
+        self.geometry("900x600")
         self.resizable(False, False)
 
         self.devices = {}
-        self.profiles = {}
+        self.apps = {}
 
-        self.create_widgets()
-        self.refresh_devices()
-        self.refresh_profiles()
+        self.build_ui()
+        self.refresh_all()
 
-    def create_widgets(self):
+    # ---------------- UI ----------------
 
-        self.title_label = ctk.CTkLabel(
+    def build_ui(self):
+
+        title = ctk.CTkLabel(
             self,
             text=APP_NAME,
-            font=("Segoe UI", 24, "bold")
+            font=("Segoe UI", 28, "bold")
         )
-        self.title_label.pack(pady=20)
+        title.pack(pady=20)
 
-        # Device Section
-        self.device_label = ctk.CTkLabel(
-            self,
-            text="Select Default Output Device",
-            font=("Segoe UI", 14)
-        )
-        self.device_label.pack(pady=10)
+        # ---------------- GLOBAL SECTION ----------------
 
-        self.device_dropdown = ctk.CTkOptionMenu(self, values=["Loading..."])
-        self.device_dropdown.pack(pady=5)
+        global_frame = ctk.CTkFrame(self)
+        global_frame.pack(pady=10, padx=20, fill="x")
 
-        self.apply_button = ctk.CTkButton(
-            self,
-            text="Apply Device",
-            command=self.apply_device
-        )
-        self.apply_button.pack(pady=15)
+        ctk.CTkLabel(global_frame,
+                     text="Global Output Device",
+                     font=("Segoe UI", 16, "bold")).pack(pady=10)
 
-        self.refresh_button = ctk.CTkButton(
-            self,
-            text="Refresh Devices",
-            command=self.refresh_devices
-        )
-        self.refresh_button.pack(pady=5)
+        self.global_device_dropdown = ctk.CTkOptionMenu(global_frame, values=["Loading..."])
+        self.global_device_dropdown.pack(pady=5)
 
-        # Profile Section
-        self.profile_label = ctk.CTkLabel(
-            self,
-            text="Profiles",
-            font=("Segoe UI", 16, "bold")
-        )
-        self.profile_label.pack(pady=20)
+        ctk.CTkButton(
+            global_frame,
+            text="Apply Global Device",
+            command=self.apply_global_device
+        ).pack(pady=10)
 
-        self.profile_dropdown = ctk.CTkOptionMenu(self, values=["No Profiles"])
-        self.profile_dropdown.pack(pady=5)
+        # ---------------- PER APP SECTION ----------------
 
-        self.load_profile_button = ctk.CTkButton(
-            self,
-            text="Load Profile",
-            command=self.load_selected_profile
-        )
-        self.load_profile_button.pack(pady=5)
+        app_frame = ctk.CTkFrame(self)
+        app_frame.pack(pady=10, padx=20, fill="x")
 
-        self.profile_name_entry = ctk.CTkEntry(
-            self,
-            placeholder_text="Profile Name"
-        )
-        self.profile_name_entry.pack(pady=5)
+        ctk.CTkLabel(app_frame,
+                     text="Per-Application Routing",
+                     font=("Segoe UI", 16, "bold")).pack(pady=10)
 
-        self.save_profile_button = ctk.CTkButton(
-            self,
-            text="Save Current as Profile",
-            command=self.save_current_profile
-        )
-        self.save_profile_button.pack(pady=10)
+        self.app_dropdown = ctk.CTkOptionMenu(app_frame, values=["No Apps"])
+        self.app_dropdown.pack(pady=5)
+
+        self.app_device_dropdown = ctk.CTkOptionMenu(app_frame, values=["Select Device"])
+        self.app_device_dropdown.pack(pady=5)
+
+        ctk.CTkButton(
+            app_frame,
+            text="Apply App Routing",
+            command=self.apply_app_routing
+        ).pack(pady=10)
+
+        # ---------------- QUICK ACTIONS ----------------
+
+        actions_frame = ctk.CTkFrame(self)
+        actions_frame.pack(pady=20, padx=20, fill="x")
+
+        ctk.CTkLabel(actions_frame,
+                     text="Quick Actions",
+                     font=("Segoe UI", 16, "bold")).pack(pady=10)
+
+        ctk.CTkButton(
+            actions_frame,
+            text="Toggle Mute",
+            command=toggle_mute
+        ).pack(pady=5)
+
+        ctk.CTkButton(
+            actions_frame,
+            text="Open Windows Audio Mixer",
+            command=open_windows_audio_settings
+        ).pack(pady=5)
+
+        ctk.CTkButton(
+            actions_frame,
+            text="Refresh Devices & Apps",
+            command=self.refresh_all
+        ).pack(pady=10)
+
+    # ---------------- REFRESH ----------------
+
+    def refresh_all(self):
+        self.refresh_devices()
+        self.refresh_apps()
 
     def refresh_devices(self):
         self.devices = scan_output_devices()
 
         if self.devices:
             names = list(self.devices.keys())
-            self.device_dropdown.configure(values=names)
-            self.device_dropdown.set(names[0])
-        else:
-            self.device_dropdown.configure(values=["No Devices Found"])
-            self.device_dropdown.set("No Devices Found")
+            self.global_device_dropdown.configure(values=names)
+            self.global_device_dropdown.set(names[0])
 
-    def apply_device(self):
-        selected = self.device_dropdown.get()
+            self.app_device_dropdown.configure(values=names)
+            self.app_device_dropdown.set(names[0])
+        else:
+            self.global_device_dropdown.configure(values=["No Devices"])
+            self.app_device_dropdown.configure(values=["No Devices"])
+
+    def refresh_apps(self):
+        self.apps = scan_audio_apps()
+
+        if self.apps:
+            names = list(self.apps.keys())
+            self.app_dropdown.configure(values=names)
+            self.app_dropdown.set(names[0])
+        else:
+            self.app_dropdown.configure(values=["No Active Audio Apps"])
+            self.app_dropdown.set("No Active Audio Apps")
+
+    # ---------------- ACTIONS ----------------
+
+    def apply_global_device(self):
+        selected = self.global_device_dropdown.get()
         if selected in self.devices:
             set_default_device(self.devices[selected])
 
-    def refresh_profiles(self):
-        self.profiles = load_profiles()
+    def apply_app_routing(self):
+        app_name = self.app_dropdown.get()
+        device_name = self.app_device_dropdown.get()
 
-        if self.profiles:
-            names = list(self.profiles.keys())
-            self.profile_dropdown.configure(values=names)
-            self.profile_dropdown.set(names[0])
-        else:
-            self.profile_dropdown.configure(values=["No Profiles"])
-            self.profile_dropdown.set("No Profiles")
-
-    def save_current_profile(self):
-        name = self.profile_name_entry.get().strip()
-        selected = self.device_dropdown.get()
-
-        if name and selected in self.devices:
-            save_profile(name, self.devices[selected])
-            self.refresh_profiles()
-
-    def load_selected_profile(self):
-        profile_name = self.profile_dropdown.get()
-        device_id = get_profile(profile_name)
-
-        if device_id:
-            set_default_device(device_id)
-
-
+        if app_name in self.apps and device_name in self.devices:
+            exe_name = self.apps[app_name]
+            device_id = self.devices[device_name]
+            set_app_device(device_id, exe_name)
