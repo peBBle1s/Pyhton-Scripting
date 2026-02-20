@@ -6,10 +6,11 @@ import sys
 import winreg
 from config import SOUND_VOLUME_VIEW, DEVICES_FILE
 
-# -------------------- DEVICE SCAN --------------------
+# --------------------------------------------------
+# INTERNAL
+# --------------------------------------------------
 
 def _generate_csv():
-    """Run SoundVolumeView to regenerate devices.csv (silent)."""
     try:
         subprocess.run(
             [SOUND_VOLUME_VIEW, "/scomma", DEVICES_FILE],
@@ -21,69 +22,116 @@ def _generate_csv():
         pass
 
 
+# --------------------------------------------------
+# OUTPUT (Render)
+# --------------------------------------------------
+
 def scan_output_devices():
     devices = {}
     _generate_csv()
 
     try:
-        with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as csvfile:
-            reader = csv.DictReader(csvfile)
+        with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
             for row in reader:
                 if row.get("Type") == "Device" and row.get("Direction") == "Render":
-                    friendly_name = row.get("Device Name") or row.get("Name")
+                    name = row.get("Device Name") or row.get("Name")
                     device_id = row.get("Item ID")
-                    if friendly_name and device_id:
-                        devices[friendly_name] = device_id
+                    if name and device_id:
+                        devices[name] = device_id
     except Exception as e:
-        print("Device scan error:", e)
+        print("Output scan error:", e)
+
     return devices
 
 
-# -------------------- CURRENT DEFAULT --------------------
-
-def get_current_default_device():
-    """
-    Returns the friendly name of the current default render device (or None).
-    Checks Default, Default Multimedia, and Default Communications columns.
-    """
+def get_current_default_output():
     _generate_csv()
     try:
-        with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as csvfile:
-            reader = csv.DictReader(csvfile)
+        with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
             for row in reader:
                 if row.get("Type") == "Device" and row.get("Direction") == "Render":
-                    # Some exports mark the default in different columns.
-                    if row.get("Default") == "Render" \
-                       or row.get("Default Multimedia") == "Render" \
-                       or row.get("Default Communications") == "Render":
+                    if (
+                        row.get("Default") == "Render"
+                        or row.get("Default Multimedia") == "Render"
+                        or row.get("Default Communications") == "Render"
+                    ):
                         return row.get("Device Name") or row.get("Name")
-    except Exception as e:
-        print("Current default read error:", e)
+    except Exception:
+        pass
+
     return None
 
 
-# -------------------- APP SCAN --------------------
+# --------------------------------------------------
+# INPUT (Microphone / Capture)
+# --------------------------------------------------
+
+def scan_input_devices():
+    devices = {}
+    _generate_csv()
+
+    try:
+        with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("Type") == "Device" and row.get("Direction") == "Capture":
+                    name = row.get("Device Name") or row.get("Name")
+                    device_id = row.get("Item ID")
+                    if name and device_id:
+                        devices[name] = device_id
+    except Exception as e:
+        print("Input scan error:", e)
+
+    return devices
+
+
+def get_current_default_input():
+    _generate_csv()
+    try:
+        with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("Type") == "Device" and row.get("Direction") == "Capture":
+                    if (
+                        row.get("Default") == "Capture"
+                        or row.get("Default Multimedia") == "Capture"
+                        or row.get("Default Communications") == "Capture"
+                    ):
+                        return row.get("Device Name") or row.get("Name")
+    except Exception:
+        pass
+
+    return None
+
+
+# --------------------------------------------------
+# APPLICATION SCAN
+# --------------------------------------------------
 
 def scan_audio_apps():
     apps = {}
     _generate_csv()
 
     try:
-        with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as csvfile:
-            reader = csv.DictReader(csvfile)
+        with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
             for row in reader:
                 if row.get("Type") == "Application" and row.get("Process Path"):
                     friendly_name = row.get("Name")
-                    process_path = row.get("Process Path")
-                    exe_name = os.path.basename(process_path) if process_path else None
+                    exe_name = os.path.basename(row.get("Process Path"))
                     if friendly_name and exe_name:
                         apps[friendly_name] = exe_name
     except Exception as e:
         print("App scan error:", e)
+
     return apps
 
 
-# -------------------- GLOBAL SWITCH --------------------
+# --------------------------------------------------
+# GLOBAL SWITCH
+# --------------------------------------------------
 
 def set_default_device(device_id):
     try:
@@ -98,13 +146,15 @@ def set_default_device(device_id):
         print("Set default error:", e)
 
 
-# -------------------- PER APP ROUTING --------------------
+# --------------------------------------------------
+# PER APP ROUTING
+# --------------------------------------------------
 
-def set_app_device(device_id, app_exe):
+def set_app_device(device_id, exe_name):
     try:
         for role in ["0", "1", "2"]:
             subprocess.run(
-                [SOUND_VOLUME_VIEW, "/SetAppDefault", device_id, role, app_exe],
+                [SOUND_VOLUME_VIEW, "/SetAppDefault", device_id, role, exe_name],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False
@@ -113,41 +163,39 @@ def set_app_device(device_id, app_exe):
         print("App routing error:", e)
 
 
-# -------------------- MUTE / WINDOWS --------------------
+# --------------------------------------------------
+# MISC
+# --------------------------------------------------
 
 def toggle_mute():
-    try:
-        subprocess.run([SOUND_VOLUME_VIEW, "/Mute", "Toggle"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    except Exception as e:
-        print("Mute error:", e)
+    subprocess.run(
+        [SOUND_VOLUME_VIEW, "/Mute", "Toggle"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False
+    )
 
 
 def open_windows_audio_settings():
-    # Safe cross-call to MS settings
     os.system("start ms-settings:apps-volume")
 
 
-# -------------------- STARTUP (Auto-run) --------------------
+# --------------------------------------------------
+# STARTUP
+# --------------------------------------------------
 
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 _RUN_NAME = "PebX"
 
 def enable_startup(enable: bool):
-    """
-    Enable or disable autostart at user login.
-    When enabled, sets the run key to run the packaged exe if present, else
-    uses current python executable + main.py path.
-    """
     try:
-        exe_path = getattr(sys, "frozen", False) and sys.executable or sys.executable
-        # prefer exe if running as exe; otherwise point to python and main.py
+        exe_path = sys.executable
         base = os.path.dirname(os.path.abspath(__file__))
         main_py = os.path.join(base, "main.py")
+
         if getattr(sys, "frozen", False):
-            value = f'"{sys.executable}"'
+            value = f'"{exe_path}"'
         else:
-            # use python -m to avoid store alias issues
             value = f'"{exe_path}" "{main_py}"'
 
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_ALL_ACCESS) as key:
@@ -159,8 +207,7 @@ def enable_startup(enable: bool):
                 except FileNotFoundError:
                     pass
         return True
-    except Exception as e:
-        print("Enable startup error:", e)
+    except Exception:
         return False
 
 
@@ -169,7 +216,5 @@ def is_startup_enabled():
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_READ) as key:
             val, _ = winreg.QueryValueEx(key, _RUN_NAME)
             return bool(val)
-    except FileNotFoundError:
-        return False
     except Exception:
         return False
