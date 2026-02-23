@@ -1,7 +1,5 @@
 # gui.py
 import customtkinter as ctk
-import threading
-import time
 from router import *
 from config import APP_NAME
 
@@ -10,7 +8,7 @@ ctk.set_default_color_theme("dark-blue")
 
 ACCENT = "#00E5FF"
 BG_MAIN = "#14181C"
-BG_PANEL = "#1B2127"
+BG_CARD = "#1B2127"
 BORDER = "#2A3138"
 
 
@@ -21,19 +19,15 @@ class PebXGUI(ctk.CTk):
 
         self.title("PebX — Signal Control")
         self.geometry("1100x650")
-        self.configure(fg_color=BG_MAIN)
         self.resizable(False, False)
+        self.configure(fg_color=BG_MAIN)
 
         self.output_devices = {}
         self.input_devices = {}
         self.apps = {}
 
-        self._pulse_running = False
-
         self.build_ui()
         self.refresh_all()
-
-        self.after(2000, self._update_status)
 
     # --------------------------------------------------
     # UI
@@ -41,60 +35,132 @@ class PebXGUI(ctk.CTk):
 
     def build_ui(self):
 
-        header = ctk.CTkLabel(self, text="PEBX SIGNAL CONTROL",
-                              font=("Segoe UI", 24, "bold"),
-                              text_color=ACCENT)
-        header.pack(pady=20)
+        # Header
+        header = ctk.CTkLabel(
+            self,
+            text="PEBX SIGNAL CONTROL",
+            font=("Segoe UI", 24, "bold"),
+            text_color=ACCENT
+        )
+        header.pack(pady=(25, 10))
 
-        main = ctk.CTkFrame(self, fg_color=BG_MAIN)
-        main.pack(fill="both", expand=True, padx=20)
+        # ---------------------------
+        # TOP ROW
+        # ---------------------------
 
-        main.columnconfigure((0, 1), weight=1)
+        top_frame = ctk.CTkFrame(self, fg_color="transparent")
+        top_frame.pack(pady=20)
 
-        # GLOBAL OUTPUT
-        output_panel = ctk.CTkFrame(main, fg_color=BG_PANEL)
-        output_panel.grid(row=0, column=0, padx=15, pady=15, sticky="nsew")
+        # Global Output Card
+        output_card = ctk.CTkFrame(
+            top_frame,
+            width=450,
+            height=170,
+            fg_color=BG_CARD,
+            corner_radius=12
+        )
+        output_card.grid(row=0, column=0, padx=25)
+        output_card.grid_propagate(False)
 
-        ctk.CTkLabel(output_panel, text="Global Output", text_color=ACCENT).pack(pady=10)
+        ctk.CTkLabel(
+            output_card,
+            text="Global Output",
+            text_color=ACCENT,
+            font=("Segoe UI", 14)
+        ).pack(pady=(15, 5))
 
-        self.global_output_dropdown = ctk.CTkOptionMenu(output_panel, values=["Loading..."])
-        self.global_output_dropdown.pack(pady=10, padx=20, fill="x")
+        self.global_output_dropdown = ctk.CTkOptionMenu(
+            output_card,
+            width=350
+        )
+        self.global_output_dropdown.pack(pady=10)
 
-        ctk.CTkButton(output_panel, text="Apply Output",
-                      command=self._apply_global_output).pack(pady=10)
+        ctk.CTkButton(
+            output_card,
+            text="Apply Output",
+            width=160,
+            command=self._apply_global_output
+        ).pack(pady=(10, 15))
 
-        # GLOBAL MIC
-        mic_panel = ctk.CTkFrame(main, fg_color=BG_PANEL)
-        mic_panel.grid(row=0, column=1, padx=15, pady=15, sticky="nsew")
+        # Global Microphone Card
+        mic_card = ctk.CTkFrame(
+            top_frame,
+            width=450,
+            height=170,
+            fg_color=BG_CARD,
+            corner_radius=12
+        )
+        mic_card.grid(row=0, column=1, padx=25)
+        mic_card.grid_propagate(False)
 
-        ctk.CTkLabel(mic_panel, text="Global Microphone", text_color=ACCENT).pack(pady=10)
+        ctk.CTkLabel(
+            mic_card,
+            text="Global Microphone",
+            text_color=ACCENT,
+            font=("Segoe UI", 14)
+        ).pack(pady=(15, 5))
 
-        self.global_mic_dropdown = ctk.CTkOptionMenu(mic_panel, values=["Loading..."])
-        self.global_mic_dropdown.pack(pady=10, padx=20, fill="x")
+        self.global_mic_dropdown = ctk.CTkOptionMenu(
+            mic_card,
+            width=350
+        )
+        self.global_mic_dropdown.pack(pady=10)
 
-        ctk.CTkButton(mic_panel, text="Apply Microphone",
-                      command=self._apply_global_mic).pack(pady=10)
+        ctk.CTkButton(
+            mic_card,
+            text="Apply Microphone",
+            width=160,
+            command=self._apply_global_mic
+        ).pack(pady=(10, 15))
 
-        # PER APP
-        app_panel = ctk.CTkFrame(self, fg_color=BG_PANEL)
-        app_panel.pack(fill="x", padx=20, pady=15)
+        # ---------------------------
+        # BOTTOM PANEL (PER APP)
+        # ---------------------------
 
-        ctk.CTkLabel(app_panel, text="Per-App Routing", text_color=ACCENT).pack(pady=10)
+        bottom_card = ctk.CTkFrame(
+            self,
+            width=1000,
+            height=230,
+            fg_color=BG_CARD,
+            corner_radius=12
+        )
+        bottom_card.pack(pady=30)
+        bottom_card.pack_propagate(False)
 
-        self.app_dropdown = ctk.CTkOptionMenu(app_panel, values=["Loading..."])
-        self.app_dropdown.pack(pady=5, padx=40, fill="x")
+        ctk.CTkLabel(
+            bottom_card,
+            text="Per-App Routing",
+            text_color=ACCENT,
+            font=("Segoe UI", 15)
+        ).pack(pady=(15, 10))
 
-        self.app_output_dropdown = ctk.CTkOptionMenu(app_panel, values=["Select Output"])
-        self.app_output_dropdown.pack(pady=5, padx=40, fill="x")
+        self.app_dropdown = ctk.CTkOptionMenu(
+            bottom_card,
+            width=800
+        )
+        self.app_dropdown.pack(pady=5)
 
-        self.app_mic_dropdown = ctk.CTkOptionMenu(app_panel, values=["Select Mic"])
-        self.app_mic_dropdown.pack(pady=5, padx=40, fill="x")
+        self.app_output_dropdown = ctk.CTkOptionMenu(
+            bottom_card,
+            width=800
+        )
+        self.app_output_dropdown.pack(pady=5)
 
-        ctk.CTkButton(app_panel, text="Apply To App",
-                      command=self._apply_app).pack(pady=10)
+        self.app_mic_dropdown = ctk.CTkOptionMenu(
+            bottom_card,
+            width=800
+        )
+        self.app_mic_dropdown.pack(pady=5)
+
+        ctk.CTkButton(
+            bottom_card,
+            text="Apply To App",
+            width=180,
+            command=self._apply_app
+        ).pack(pady=(15, 20))
 
     # --------------------------------------------------
-    # REFRESH
+    # DATA LOAD
     # --------------------------------------------------
 
     def refresh_all(self):
@@ -120,18 +186,18 @@ class PebXGUI(ctk.CTk):
             self.app_dropdown.set(names[0])
 
     # --------------------------------------------------
-    # APPLY
+    # APPLY FUNCTIONS
     # --------------------------------------------------
 
     def _apply_global_output(self):
         selected = self.global_output_dropdown.get()
         if selected in self.output_devices:
-            set_default_device(self.output_devices[selected])
+            set_default_output(self.output_devices[selected])
 
     def _apply_global_mic(self):
         selected = self.global_mic_dropdown.get()
         if selected in self.input_devices:
-            set_default_device(self.input_devices[selected])
+            set_default_input(self.input_devices[selected])
 
     def _apply_app(self):
         app = self.app_dropdown.get()
@@ -145,8 +211,3 @@ class PebXGUI(ctk.CTk):
             mic_dev = self.app_mic_dropdown.get()
             if mic_dev in self.input_devices:
                 set_app_device(self.input_devices[mic_dev], exe)
-
-    # --------------------------------------------------
-
-    def _update_status(self):
-        self.after(2000, self._update_status)
