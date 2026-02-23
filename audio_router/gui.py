@@ -12,6 +12,8 @@ from router import (
     set_app_device, toggle_mute, open_windows_audio_settings,
     get_current_default_device, enable_startup, is_startup_enabled
 )
+from foreground import get_foreground_process
+from profiles import get_profile, save_profile
 from config import APP_NAME, LOG_FILE, STATE_FILE, logger
 
 # Theme & colors
@@ -28,7 +30,7 @@ class PebXGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("PebX — Signal Control")
-        self.geometry("1000x600")
+        self.geometry("1000x640") # Slightly taller to fit new buttons
         self.configure(fg_color=BG_MAIN)
         self.resizable(False, False)
 
@@ -36,20 +38,22 @@ class PebXGUI(ctk.CTk):
         self.apps = {}
         self.current_default_cache = None
         self._pulse_running = False
-        
         self.saved_app_routes = {}
+        
+        # Memory for The Brain
+        self.last_foreground_app = None
+        self.auto_switch_enabled = ctk.BooleanVar(value=False)
 
         self.build_ui()
         self.refresh_all()
-        
-        # Load memory on startup
         self.load_state()
 
+        # Start background threads
         self.after(1500, self._periodic_status_update)
+        self.after(2000, self._foreground_watcher_loop) # Start The Brain
 
     # ---------- Build UI ----------
     def build_ui(self):
-        # HEADER
         header = ctk.CTkFrame(self, fg_color=BG_MAIN)
         header.pack(fill="x", pady=(10, 0), padx=20)
 
@@ -70,60 +74,50 @@ class PebXGUI(ctk.CTk):
         )
         self.status_label.pack(anchor="w", pady=(6, 10))
 
-        # ---------------- TABS ----------------
         self.tabview = ctk.CTkTabview(self, fg_color=BG_MAIN, segmented_button_selected_color=ACCENT, 
-                                      segmented_button_selected_hover_color="#00B8CC",
-                                      text_color="white")
+                                      segmented_button_selected_hover_color="#00B8CC", text_color="white")
         self.tabview.pack(fill="both", expand=True, padx=20, pady=(0, 10))
         
         tab_routing = self.tabview.add("Routing Matrix")
         tab_reports = self.tabview.add("Live Reports")
 
-        # --- TAB 1: ROUTING MATRIX ---
         tab_routing.columnconfigure(0, weight=1)
         tab_routing.columnconfigure(1, weight=1)
 
         # GLOBAL PANEL
-        global_panel = ctk.CTkFrame(tab_routing, fg_color=BG_PANEL, corner_radius=8,
-                                    border_width=1, border_color=BORDER)
+        global_panel = ctk.CTkFrame(tab_routing, fg_color=BG_PANEL, corner_radius=8, border_width=1, border_color=BORDER)
         global_panel.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
-        ctk.CTkLabel(global_panel, text="GLOBAL OUTPUT", text_color=ACCENT,
-                     font=("Segoe UI", 14, "bold")).pack(pady=(20, 10))
+        ctk.CTkLabel(global_panel, text="GLOBAL OUTPUT", text_color=ACCENT, font=("Segoe UI", 14, "bold")).pack(pady=(20, 10))
 
-        self.global_device_dropdown = ctk.CTkOptionMenu(global_panel, values=["Loading..."],
-                                                        fg_color=BG_PANEL, button_color=ACCENT,
-                                                        button_hover_color="#00B8CC")
+        self.global_device_dropdown = ctk.CTkOptionMenu(global_panel, values=["Loading..."], fg_color=BG_PANEL, button_color=ACCENT, button_hover_color="#00B8CC")
         self.global_device_dropdown.pack(pady=10, padx=30, fill="x")
 
-        ctk.CTkButton(global_panel, text="APPLY DEVICE", fg_color=ACCENT, hover_color="#00B8CC",
-                      text_color="black", command=self._apply_global_device_with_pulse).pack(pady=20, padx=30, fill="x")
+        ctk.CTkButton(global_panel, text="APPLY DEVICE", fg_color=ACCENT, hover_color="#00B8CC", text_color="black", command=self._apply_global_device_with_pulse).pack(pady=20, padx=30, fill="x")
 
         # APP PANEL
-        app_panel = ctk.CTkFrame(tab_routing, fg_color=BG_PANEL, corner_radius=8,
-                                 border_width=1, border_color=BORDER)
+        app_panel = ctk.CTkFrame(tab_routing, fg_color=BG_PANEL, corner_radius=8, border_width=1, border_color=BORDER)
         app_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
-        ctk.CTkLabel(app_panel, text="APPLICATION ROUTING", text_color=ACCENT,
-                     font=("Segoe UI", 14, "bold")).pack(pady=(20, 10))
+        ctk.CTkLabel(app_panel, text="APPLICATION ROUTING", text_color=ACCENT, font=("Segoe UI", 14, "bold")).pack(pady=(15, 5))
 
-        self.app_dropdown = ctk.CTkOptionMenu(app_panel, values=["No Apps"], fg_color=BG_PANEL,
-                                              button_color=ACCENT, button_hover_color="#00B8CC")
-        self.app_dropdown.pack(pady=10, padx=30, fill="x")
+        self.app_dropdown = ctk.CTkOptionMenu(app_panel, values=["No Apps"], fg_color=BG_PANEL, button_color=ACCENT, button_hover_color="#00B8CC")
+        self.app_dropdown.pack(pady=5, padx=30, fill="x")
 
-        self.app_device_dropdown = ctk.CTkOptionMenu(app_panel, values=["Select Device"], fg_color=BG_PANEL,
-                                                     button_color=ACCENT, button_hover_color="#00B8CC")
-        self.app_device_dropdown.pack(pady=10, padx=30, fill="x")
+        self.app_device_dropdown = ctk.CTkOptionMenu(app_panel, values=["Select Device"], fg_color=BG_PANEL, button_color=ACCENT, button_hover_color="#00B8CC")
+        self.app_device_dropdown.pack(pady=5, padx=30, fill="x")
 
-        ctk.CTkButton(app_panel, text="APPLY ROUTE", fg_color=ACCENT, hover_color="#00B8CC",
-                      text_color="black", command=self._apply_app_with_pulse).pack(pady=20, padx=30, fill="x")
+        ctk.CTkButton(app_panel, text="APPLY ROUTE", fg_color=ACCENT, hover_color="#00B8CC", text_color="black", command=self._apply_app_with_pulse).pack(pady=10, padx=30, fill="x")
 
-        # --- TAB 2: LIVE REPORTS ---
-        ctk.CTkLabel(tab_reports, text="SYSTEM AUDIT LOG (Last 15 Events)", text_color=ACCENT, 
-                     font=("Segoe UI", 14, "bold")).pack(pady=(10, 5), anchor="w", padx=10)
-        
-        self.log_textbox = ctk.CTkTextbox(tab_reports, fg_color=BG_PANEL, text_color="#00FF41", 
-                                          font=("Consolas", 12), border_width=1, border_color=BORDER)
+        # BRAIN TOGGLES
+        self.brain_toggle = ctk.CTkSwitch(app_panel, text="Enable Smart Brain (Auto-Switch)", variable=self.auto_switch_enabled, progress_color="#4CAF50")
+        self.brain_toggle.pack(pady=5, padx=30, fill="x")
+
+        ctk.CTkButton(app_panel, text="SAVE AS AUTO-PROFILE", fg_color="#4CAF50", hover_color="#45a049", text_color="black", command=self._save_auto_profile_with_pulse).pack(pady=(5, 15), padx=30, fill="x")
+
+        # LIVE REPORTS TAB
+        ctk.CTkLabel(tab_reports, text="SYSTEM AUDIT LOG (Last 15 Events)", text_color=ACCENT, font=("Segoe UI", 14, "bold")).pack(pady=(10, 5), anchor="w", padx=10)
+        self.log_textbox = ctk.CTkTextbox(tab_reports, fg_color=BG_PANEL, text_color="#00FF41", font=("Consolas", 12), border_width=1, border_color=BORDER)
         self.log_textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         self.log_textbox.insert("1.0", "Waiting for telemetry...")
         self.log_textbox.configure(state="disabled")
@@ -133,22 +127,45 @@ class PebXGUI(ctk.CTk):
         footer.pack(fill="x", padx=20, pady=(0, 20))
         footer.columnconfigure((0, 1, 2, 3, 4), weight=1)
 
-        ctk.CTkButton(footer, text="MUTE", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1,
-                      border_color=BORDER, command=self._mute_and_pulse).grid(row=0, column=0, padx=5, pady=15, sticky="ew")
-
-        ctk.CTkButton(footer, text="WINDOWS MIXER", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1,
-                      border_color=BORDER, command=open_windows_audio_settings).grid(row=0, column=1, padx=5, pady=15, sticky="ew")
-
-        ctk.CTkButton(footer, text="REFRESH", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1,
-                      border_color=BORDER, command=self.refresh_all).grid(row=0, column=2, padx=5, pady=15, sticky="ew")
-
-        self.autostart_toggle = ctk.CTkButton(footer, text="Auto-Start: Checking...", fg_color=BG_PANEL,
-                                              hover_color=ACCENT, border_width=1, border_color=BORDER,
-                                              command=self._toggle_autostart)
+        ctk.CTkButton(footer, text="MUTE", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1, border_color=BORDER, command=self._mute_and_pulse).grid(row=0, column=0, padx=5, pady=15, sticky="ew")
+        ctk.CTkButton(footer, text="WINDOWS MIXER", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1, border_color=BORDER, command=open_windows_audio_settings).grid(row=0, column=1, padx=5, pady=15, sticky="ew")
+        ctk.CTkButton(footer, text="REFRESH", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1, border_color=BORDER, command=self.refresh_all).grid(row=0, column=2, padx=5, pady=15, sticky="ew")
+        
+        self.autostart_toggle = ctk.CTkButton(footer, text="Auto-Start: Checking...", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1, border_color=BORDER, command=self._toggle_autostart)
         self.autostart_toggle.grid(row=0, column=3, padx=5, pady=15, sticky="ew")
+        
+        ctk.CTkButton(footer, text="COLLECT LOGS", fg_color="#FF3B30", hover_color="#CC2E26", border_width=1, border_color=BORDER, text_color="white", command=self._extract_diagnostic_report).grid(row=0, column=4, padx=5, pady=15, sticky="ew")
 
-        ctk.CTkButton(footer, text="COLLECT LOGS", fg_color="#FF3B30", hover_color="#CC2E26", border_width=1,
-                      border_color=BORDER, text_color="white", command=self._extract_diagnostic_report).grid(row=0, column=4, padx=5, pady=15, sticky="ew")
+    # ---------- THE BRAIN (Foreground Watcher) ----------
+    def _foreground_watcher_loop(self):
+        """Monitors the active window and automatically routes audio if a profile exists."""
+        try:
+            if self.auto_switch_enabled.get():
+                active_exe = get_foreground_process()
+                if active_exe and active_exe != self.last_foreground_app:
+                    self.last_foreground_app = active_exe
+                    target_device_id = get_profile(active_exe)
+                    
+                    if target_device_id:
+                        logger.info(f"[BRAIN] Target locked: '{active_exe}'. Applying auto-route.")
+                        set_app_device(target_device_id, active_exe)
+                        self._update_live_reports()
+        except Exception as e:
+            logger.debug(f"Brain loop error: {e}")
+        finally:
+            self.after(2000, self._foreground_watcher_loop) # Check every 2 seconds
+
+    def _save_auto_profile_with_pulse(self):
+        app_name = self.app_dropdown.get()
+        device_name = self.app_device_dropdown.get()
+        if app_name in self.apps and device_name in self.devices:
+            exe_name = self.apps[app_name]
+            device_id = self.devices[device_name]
+            save_profile(exe_name, device_id)
+            logger.info(f"[BRAIN] Saved Auto-Profile: '{exe_name}' -> '{device_name}'")
+            self._update_live_reports()
+            self.save_state()
+        self._pulse_animation()
 
     # ---------- STATE MANAGEMENT (Memory) ----------
     def load_state(self):
@@ -180,22 +197,15 @@ class PebXGUI(ctk.CTk):
             "app_routes": self.saved_app_routes
         }
         try:
-            # 0. UN-CLOAK: Temporarily set attribute to Normal (0x80)
             if os.path.exists(STATE_FILE):
-                try:
-                    ctypes.windll.kernel32.SetFileAttributesW(STATE_FILE, 0x80)
-                except Exception:
-                    pass
+                try: ctypes.windll.kernel32.SetFileAttributesW(STATE_FILE, 0x80)
+                except Exception: pass
 
-            # 1. WRITE
             with open(STATE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(state, f, indent=4)
             
-            # 2. RE-CLOAK: Apply the Windows 'Hidden' attribute (0x02)
-            try:
-                ctypes.windll.kernel32.SetFileAttributesW(STATE_FILE, 0x02)
-            except Exception:
-                pass 
+            try: ctypes.windll.kernel32.SetFileAttributesW(STATE_FILE, 0x02)
+            except Exception: pass 
                 
             logger.info("[MEMORY] Application state successfully saved and hidden.")
             self._update_live_reports()
@@ -234,15 +244,8 @@ class PebXGUI(ctk.CTk):
             messagebox.showinfo("No Data", "No diagnostic logs found to collect.")
             return
 
-        dest = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            initialfile="PebX_Diagnostic_Report.txt",
-            title="Save Diagnostic Report",
-            filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")]
-        )
-        
-        if not dest:
-            return
+        dest = filedialog.asksaveasfilename(defaultextension=".txt", initialfile="PebX_Diagnostic_Report.txt", title="Save Diagnostic Report", filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
+        if not dest: return
 
         try:
             with open(LOG_FILE, 'r') as f_in, open(dest, 'w', encoding='utf-8') as f_out:
@@ -288,10 +291,8 @@ class PebXGUI(ctk.CTk):
 
     # ---------- PULSE animation ----------
     def _pulse_animation(self, cycles=3, interval=120):
-        if self._pulse_running:
-            return
+        if self._pulse_running: return
         self._pulse_running = True
-
         def pulse():
             try:
                 for _ in range(cycles):
@@ -301,9 +302,7 @@ class PebXGUI(ctk.CTk):
                     time.sleep(interval / 1000.0)
             finally:
                 self._pulse_running = False
-
-        t = threading.Thread(target=pulse, daemon=True)
-        t.start()
+        threading.Thread(target=pulse, daemon=True).start()
 
     # ---------- apply wrappers that pulse ----------
     def _apply_global_device_with_pulse(self):
@@ -321,15 +320,12 @@ class PebXGUI(ctk.CTk):
         self.save_state()
         self._pulse_animation()
 
-    # ---------- AUTOSTART toggle ----------
     def _toggle_autostart(self):
         current = is_startup_enabled()
-        success = enable_startup(not current)
-        if success:
+        if enable_startup(not current):
             self._update_autostart_label()
         self.save_state()
 
-    # ---------- Refresh ----------
     def refresh_all(self):
         logger.info("Manual refresh triggered by user.")
         self.refresh_devices()
@@ -344,11 +340,8 @@ class PebXGUI(ctk.CTk):
             names = list(self.devices.keys())
             self.global_device_dropdown.configure(values=names)
             self.app_device_dropdown.configure(values=names)
-            
-            if self.global_device_dropdown.get() not in names:
-                self.global_device_dropdown.set(names[0])
-            if self.app_device_dropdown.get() not in names:
-                self.app_device_dropdown.set(names[0])
+            if self.global_device_dropdown.get() not in names: self.global_device_dropdown.set(names[0])
+            if self.app_device_dropdown.get() not in names: self.app_device_dropdown.set(names[0])
         else:
             self.global_device_dropdown.configure(values=["No Devices"])
             self.app_device_dropdown.configure(values=["No Devices"])
@@ -358,13 +351,11 @@ class PebXGUI(ctk.CTk):
         if self.apps:
             names = list(self.apps.keys())
             self.app_dropdown.configure(values=names)
-            if self.app_dropdown.get() not in names:
-                self.app_dropdown.set(names[0])
+            if self.app_dropdown.get() not in names: self.app_dropdown.set(names[0])
         else:
             self.app_dropdown.configure(values=["No Active Apps"])
             self.app_dropdown.set("No Active Apps")
 
-    # ---------- Actions ----------
     def apply_global_device(self):
         selected = self.global_device_dropdown.get()
         if selected in self.devices:
@@ -377,5 +368,4 @@ class PebXGUI(ctk.CTk):
             exe_name = self.apps[app_name]
             device_id = self.devices[device_name]
             set_app_device(device_id, exe_name)
-            
             self.saved_app_routes[app_name] = device_name
