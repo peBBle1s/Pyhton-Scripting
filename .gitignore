@@ -4,6 +4,5 @@ venv/
 env/
 build/
 dist/
-**/*.exe
 **/*.spec
 **/*.csv
