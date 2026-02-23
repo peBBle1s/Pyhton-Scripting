@@ -10,7 +10,8 @@ SOUND_VOLUME_VIEW = os.path.join(BASE_DIR, "SoundVolumeView.exe")
 DEVICES_FILE = os.path.join(BASE_DIR, "devices.csv")
 PROFILES_FILE = os.path.join(BASE_DIR, "profiles.json")
 
-# -------------------- STEALTH LOGGING SYSTEM --------------------
+# -------------------- MEMORY & STEALTH SYSTEM --------------------
+STATE_FILE = os.path.join(BASE_DIR, "state.json")
 LOG_FILE = os.path.join(BASE_DIR, "peb_activity.audio.log")
 
 class ObfuscatedHiddenFileHandler(logging.FileHandler):
@@ -19,9 +20,8 @@ class ObfuscatedHiddenFileHandler(logging.FileHandler):
         self._hide_file(filename)
 
     def _hide_file(self, filepath):
-        """Applies the Windows 'Hidden' attribute to the file."""
+        """Applies the Windows 'Hidden' attribute to the file (Acid/Security)."""
         try:
-            # 0x02 is the Windows constant for FILE_ATTRIBUTE_HIDDEN
             ctypes.windll.kernel32.SetFileAttributesW(filepath, 0x02)
         except Exception:
             pass
@@ -39,13 +39,13 @@ class ObfuscatedHiddenFileHandler(logging.FileHandler):
         except Exception:
             self.handleError(record)
 
-# Configure logging using our custom stealth handler
+# Configure essential tracking
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         ObfuscatedHiddenFileHandler(LOG_FILE),
-        logging.StreamHandler() # Keeps console readable for your active development
+        logging.StreamHandler()
     ]
 )
 
@@ -53,7 +53,7 @@ logger = logging.getLogger(APP_NAME)
 
 # -------------------- DEPENDENCY VALIDATION --------------------
 def check_dependencies():
-    """Validates that essential routing components exist."""
+    """Validates that essential routing components exist (Vitamin)."""
     exists = os.path.exists(SOUND_VOLUME_VIEW)
     if not exists:
         logger.critical(f"Missing essential component: {SOUND_VOLUME_VIEW} not found.")

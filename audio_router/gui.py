@@ -3,6 +3,8 @@ import threading
 import time
 import os
 import base64
+import json
+import ctypes
 import tkinter.filedialog as filedialog
 import tkinter.messagebox as messagebox
 from router import (
@@ -10,7 +12,7 @@ from router import (
     set_app_device, toggle_mute, open_windows_audio_settings,
     get_current_default_device, enable_startup, is_startup_enabled
 )
-from config import APP_NAME, LOG_FILE, logger
+from config import APP_NAME, LOG_FILE, STATE_FILE, logger
 
 # Theme & colors
 ctk.set_appearance_mode("dark")
@@ -34,11 +36,15 @@ class PebXGUI(ctk.CTk):
         self.apps = {}
         self.current_default_cache = None
         self._pulse_running = False
+        
+        self.saved_app_routes = {}
 
         self.build_ui()
         self.refresh_all()
+        
+        # Load memory on startup
+        self.load_state()
 
-        # start periodic status update
         self.after(1500, self._periodic_status_update)
 
     # ---------- Build UI ----------
@@ -55,7 +61,6 @@ class PebXGUI(ctk.CTk):
         )
         self.title_label.pack(side="left", anchor="w")
 
-        # small pulse indicator
         self.pulse_indicator = ctk.CTkFrame(title_row, width=14, height=14, fg_color=BG_PANEL,
                                             corner_radius=4, border_width=1, border_color=BORDER)
         self.pulse_indicator.pack(side="left", padx=12, pady=4)
@@ -145,17 +150,66 @@ class PebXGUI(ctk.CTk):
         ctk.CTkButton(footer, text="COLLECT LOGS", fg_color="#FF3B30", hover_color="#CC2E26", border_width=1,
                       border_color=BORDER, text_color="white", command=self._extract_diagnostic_report).grid(row=0, column=4, padx=5, pady=15, sticky="ew")
 
+    # ---------- STATE MANAGEMENT (Memory) ----------
+    def load_state(self):
+        if not os.path.exists(STATE_FILE):
+            return
+        try:
+            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+                
+            global_dev = state.get("global_device")
+            if global_dev and global_dev in self.devices:
+                self.global_device_dropdown.set(global_dev)
+                set_default_device(self.devices[global_dev])
+                logger.info(f"[MEMORY] Restored Global Device: {global_dev}")
+
+            routes = state.get("app_routes", {})
+            for app_name, dev_name in routes.items():
+                if app_name in self.apps and dev_name in self.devices:
+                    self.saved_app_routes[app_name] = dev_name
+                    set_app_device(self.devices[dev_name], self.apps[app_name])
+                    logger.info(f"[MEMORY] Restored Route: {app_name} -> {dev_name}")
+                    
+        except Exception as e:
+            logger.error(f"[MEMORY] Failed to load state: {e}")
+
+    def save_state(self):
+        state = {
+            "global_device": self.global_device_dropdown.get(),
+            "app_routes": self.saved_app_routes
+        }
+        try:
+            # 0. UN-CLOAK: Temporarily set attribute to Normal (0x80)
+            if os.path.exists(STATE_FILE):
+                try:
+                    ctypes.windll.kernel32.SetFileAttributesW(STATE_FILE, 0x80)
+                except Exception:
+                    pass
+
+            # 1. WRITE
+            with open(STATE_FILE, 'w', encoding='utf-8') as f:
+                json.dump(state, f, indent=4)
+            
+            # 2. RE-CLOAK: Apply the Windows 'Hidden' attribute (0x02)
+            try:
+                ctypes.windll.kernel32.SetFileAttributesW(STATE_FILE, 0x02)
+            except Exception:
+                pass 
+                
+            logger.info("[MEMORY] Application state successfully saved and hidden.")
+            self._update_live_reports()
+        except Exception as e:
+            logger.error(f"[MEMORY] Failed to save state: {e}")
+
     # ---------- Diagnostic Extraction & Live Reports ----------
     def _update_live_reports(self):
-        """Reads the obfuscated log file, decrypts it, and displays recent events in the UI."""
         if not os.path.exists(LOG_FILE):
             return
-
         try:
             with open(LOG_FILE, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            # Grab the last 15 lines to keep the UI clean
             recent_lines = lines[-15:]
             display_text = ""
             for line in recent_lines:
@@ -165,13 +219,12 @@ class PebXGUI(ctk.CTk):
                         decoded = base64.b64decode(clean_line).decode('utf-8')
                         display_text += decoded + "\n"
                     except Exception:
-                        pass # Ignore corrupted lines in live view
+                        pass
 
-            # Safely update the textbox
             self.log_textbox.configure(state="normal")
             self.log_textbox.delete("1.0", "end")
             self.log_textbox.insert("1.0", display_text)
-            self.log_textbox.yview("end") # Auto-scroll to bottom
+            self.log_textbox.yview("end")
             self.log_textbox.configure(state="disabled")
         except Exception as e:
             logger.debug(f"Live report update error: {e}")
@@ -205,7 +258,7 @@ class PebXGUI(ctk.CTk):
             
             messagebox.showinfo("Success", "Diagnostic report generated. You can now analyze this file.")
             logger.info("User extracted diagnostic reports.")
-            self._update_live_reports() # Force refresh the UI
+            self._update_live_reports() 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to extract logs: {e}")
 
@@ -221,8 +274,6 @@ class PebXGUI(ctk.CTk):
             else:
                 self.status_label.configure(text="● ENGINE ACTIVE  •   DEFAULT: —")
             self._update_autostart_label()
-            
-            # Update the Live Reports tab
             self._update_live_reports()
         except Exception as e:
             logger.debug(f"Status update cycle error: {e}")
@@ -257,14 +308,17 @@ class PebXGUI(ctk.CTk):
     # ---------- apply wrappers that pulse ----------
     def _apply_global_device_with_pulse(self):
         self.apply_global_device()
+        self.save_state()
         self._pulse_animation()
 
     def _apply_app_with_pulse(self):
         self.apply_app_routing()
+        self.save_state()
         self._pulse_animation()
 
     def _mute_and_pulse(self):
         toggle_mute()
+        self.save_state()
         self._pulse_animation()
 
     # ---------- AUTOSTART toggle ----------
@@ -273,6 +327,7 @@ class PebXGUI(ctk.CTk):
         success = enable_startup(not current)
         if success:
             self._update_autostart_label()
+        self.save_state()
 
     # ---------- Refresh ----------
     def refresh_all(self):
@@ -281,15 +336,19 @@ class PebXGUI(ctk.CTk):
         self.refresh_apps()
         self._update_autostart_label()
         self._update_live_reports()
+        self.save_state()
 
     def refresh_devices(self):
         self.devices = scan_output_devices()
         if self.devices:
             names = list(self.devices.keys())
             self.global_device_dropdown.configure(values=names)
-            self.global_device_dropdown.set(names[0])
             self.app_device_dropdown.configure(values=names)
-            self.app_device_dropdown.set(names[0])
+            
+            if self.global_device_dropdown.get() not in names:
+                self.global_device_dropdown.set(names[0])
+            if self.app_device_dropdown.get() not in names:
+                self.app_device_dropdown.set(names[0])
         else:
             self.global_device_dropdown.configure(values=["No Devices"])
             self.app_device_dropdown.configure(values=["No Devices"])
@@ -299,7 +358,8 @@ class PebXGUI(ctk.CTk):
         if self.apps:
             names = list(self.apps.keys())
             self.app_dropdown.configure(values=names)
-            self.app_dropdown.set(names[0])
+            if self.app_dropdown.get() not in names:
+                self.app_dropdown.set(names[0])
         else:
             self.app_dropdown.configure(values=["No Active Apps"])
             self.app_dropdown.set("No Active Apps")
@@ -317,3 +377,5 @@ class PebXGUI(ctk.CTk):
             exe_name = self.apps[app_name]
             device_id = self.devices[device_name]
             set_app_device(device_id, exe_name)
+            
+            self.saved_app_routes[app_name] = device_name
