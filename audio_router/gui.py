@@ -65,15 +65,21 @@ class PebXGUI(ctk.CTk):
         )
         self.status_label.pack(anchor="w", pady=(6, 10))
 
-        # MAIN GRID
-        main_frame = ctk.CTkFrame(self, fg_color=BG_MAIN)
-        main_frame.pack(fill="both", expand=True, padx=20)
+        # ---------------- TABS ----------------
+        self.tabview = ctk.CTkTabview(self, fg_color=BG_MAIN, segmented_button_selected_color=ACCENT, 
+                                      segmented_button_selected_hover_color="#00B8CC",
+                                      text_color="white")
+        self.tabview.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        
+        tab_routing = self.tabview.add("Routing Matrix")
+        tab_reports = self.tabview.add("Live Reports")
 
-        main_frame.columnconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
+        # --- TAB 1: ROUTING MATRIX ---
+        tab_routing.columnconfigure(0, weight=1)
+        tab_routing.columnconfigure(1, weight=1)
 
         # GLOBAL PANEL
-        global_panel = ctk.CTkFrame(main_frame, fg_color=BG_PANEL, corner_radius=8,
+        global_panel = ctk.CTkFrame(tab_routing, fg_color=BG_PANEL, corner_radius=8,
                                     border_width=1, border_color=BORDER)
         global_panel.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
@@ -89,7 +95,7 @@ class PebXGUI(ctk.CTk):
                       text_color="black", command=self._apply_global_device_with_pulse).pack(pady=20, padx=30, fill="x")
 
         # APP PANEL
-        app_panel = ctk.CTkFrame(main_frame, fg_color=BG_PANEL, corner_radius=8,
+        app_panel = ctk.CTkFrame(tab_routing, fg_color=BG_PANEL, corner_radius=8,
                                  border_width=1, border_color=BORDER)
         app_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
@@ -106,6 +112,16 @@ class PebXGUI(ctk.CTk):
 
         ctk.CTkButton(app_panel, text="APPLY ROUTE", fg_color=ACCENT, hover_color="#00B8CC",
                       text_color="black", command=self._apply_app_with_pulse).pack(pady=20, padx=30, fill="x")
+
+        # --- TAB 2: LIVE REPORTS ---
+        ctk.CTkLabel(tab_reports, text="SYSTEM AUDIT LOG (Last 15 Events)", text_color=ACCENT, 
+                     font=("Segoe UI", 14, "bold")).pack(pady=(10, 5), anchor="w", padx=10)
+        
+        self.log_textbox = ctk.CTkTextbox(tab_reports, fg_color=BG_PANEL, text_color="#00FF41", 
+                                          font=("Consolas", 12), border_width=1, border_color=BORDER)
+        self.log_textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self.log_textbox.insert("1.0", "Waiting for telemetry...")
+        self.log_textbox.configure(state="disabled")
 
         # FOOTER
         footer = ctk.CTkFrame(self, fg_color=BG_PANEL, corner_radius=0, border_width=1, border_color=BORDER)
@@ -126,11 +142,40 @@ class PebXGUI(ctk.CTk):
                                               command=self._toggle_autostart)
         self.autostart_toggle.grid(row=0, column=3, padx=5, pady=15, sticky="ew")
 
-        # EXTRACT LOGS BUTTON
         ctk.CTkButton(footer, text="COLLECT LOGS", fg_color="#FF3B30", hover_color="#CC2E26", border_width=1,
                       border_color=BORDER, text_color="white", command=self._extract_diagnostic_report).grid(row=0, column=4, padx=5, pady=15, sticky="ew")
 
-    # ---------- Diagnostic Extraction ----------
+    # ---------- Diagnostic Extraction & Live Reports ----------
+    def _update_live_reports(self):
+        """Reads the obfuscated log file, decrypts it, and displays recent events in the UI."""
+        if not os.path.exists(LOG_FILE):
+            return
+
+        try:
+            with open(LOG_FILE, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Grab the last 15 lines to keep the UI clean
+            recent_lines = lines[-15:]
+            display_text = ""
+            for line in recent_lines:
+                clean_line = line.strip()
+                if clean_line:
+                    try:
+                        decoded = base64.b64decode(clean_line).decode('utf-8')
+                        display_text += decoded + "\n"
+                    except Exception:
+                        pass # Ignore corrupted lines in live view
+
+            # Safely update the textbox
+            self.log_textbox.configure(state="normal")
+            self.log_textbox.delete("1.0", "end")
+            self.log_textbox.insert("1.0", display_text)
+            self.log_textbox.yview("end") # Auto-scroll to bottom
+            self.log_textbox.configure(state="disabled")
+        except Exception as e:
+            logger.debug(f"Live report update error: {e}")
+
     def _extract_diagnostic_report(self):
         if not os.path.exists(LOG_FILE):
             messagebox.showinfo("No Data", "No diagnostic logs found to collect.")
@@ -160,6 +205,7 @@ class PebXGUI(ctk.CTk):
             
             messagebox.showinfo("Success", "Diagnostic report generated. You can now analyze this file.")
             logger.info("User extracted diagnostic reports.")
+            self._update_live_reports() # Force refresh the UI
         except Exception as e:
             messagebox.showerror("Error", f"Failed to extract logs: {e}")
 
@@ -175,6 +221,9 @@ class PebXGUI(ctk.CTk):
             else:
                 self.status_label.configure(text="● ENGINE ACTIVE  •   DEFAULT: —")
             self._update_autostart_label()
+            
+            # Update the Live Reports tab
+            self._update_live_reports()
         except Exception as e:
             logger.debug(f"Status update cycle error: {e}")
         finally:
@@ -231,6 +280,7 @@ class PebXGUI(ctk.CTk):
         self.refresh_devices()
         self.refresh_apps()
         self._update_autostart_label()
+        self._update_live_reports()
 
     def refresh_devices(self):
         self.devices = scan_output_devices()
