@@ -58,7 +58,7 @@ def _tray_worker(app):
         pystray.MenuItem("Quit", on_quit)
     )
 
-    # Essential Tracker: Load logo2 if available, otherwise use your custom cyan circle
+    # Essential Tracker: Load logo2.ico if available, otherwise use your custom cyan circle
     if os.path.exists(LOGO_TRAY):
         image = Image.open(LOGO_TRAY)
     else:

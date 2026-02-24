@@ -9,8 +9,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Core 'Vitamins' (Dependencies & Assets)
 SOUND_VOLUME_VIEW = os.path.join(BASE_DIR, "SoundVolumeView.exe")
-LOGO_APP = os.path.join(BASE_DIR, "logo1.png")   # Top-left window & Taskbar
-LOGO_TRAY = os.path.join(BASE_DIR, "logo2.png")  # System tray icon (can also be .ico)
+LOGO_APP = os.path.join(BASE_DIR, "logo2.ico")   # Top-left window & Taskbar
+LOGO_TRAY = os.path.join(BASE_DIR, "logo2.ico")  # System tray icon
 
 # Data Matrix Paths
 DEVICES_FILE = os.path.join(BASE_DIR, "devices.csv")
