@@ -1,24 +1,44 @@
 # config.py
 import os
+import sys
 import logging
 import base64
 import ctypes
 
 APP_NAME = "PebX Signal Matrix"
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Core 'Vitamins' (Dependencies & Assets)
-SOUND_VOLUME_VIEW = os.path.join(BASE_DIR, "SoundVolumeView.exe")
-LOGO_APP = os.path.join(BASE_DIR, "logo2.ico")   # Top-left window & Taskbar
-LOGO_TRAY = os.path.join(BASE_DIR, "logo2.ico")  # System tray icon
+# --- THE ONE-FILE PATH FINDER (For Hidden Assets inside the EXE) ---
+def get_asset_path(relative_path):
+    """Locates assets whether running as a Python script or a PyInstaller One-File EXE."""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
-# Data Matrix Paths
-DEVICES_FILE = os.path.join(BASE_DIR, "devices.csv")
-PROFILES_FILE = os.path.join(BASE_DIR, "profiles.json")
+# --- THE APPDATA VAULT (For Permanent User Memory) ---
+# Locate the Windows AppData\Roaming directory
+appdata_base = os.getenv('APPDATA')
+if not appdata_base:
+    # Fallback to the user's home directory if AppData is somehow missing
+    appdata_base = os.path.expanduser("~")
 
-# Memory & Stealth System
-STATE_FILE = os.path.join(BASE_DIR, "state.json")
-LOG_FILE = os.path.join(BASE_DIR, "sound_matrix_activity.log")
+# Create a dedicated folder for your brand
+USER_DATA_DIR = os.path.join(appdata_base, APP_NAME)
+
+# ESSENTIAL ACID: Force Windows to create the folder if it doesn't exist yet
+os.makedirs(USER_DATA_DIR, exist_ok=True)
+
+# Core 'Vitamins' (Using the Path Finder so the App sees them!)
+SOUND_VOLUME_VIEW = get_asset_path("SoundVolumeView.exe")
+LOGO_APP = get_asset_path("logo2.ico")   
+LOGO_TRAY = get_asset_path("logo2.ico")  
+
+# Data Matrix Paths (Saved securely in the new AppData Vault)
+DEVICES_FILE = os.path.join(USER_DATA_DIR, "devices.csv")
+PROFILES_FILE = os.path.join(USER_DATA_DIR, "profiles.json")
+STATE_FILE = os.path.join(USER_DATA_DIR, "state.json")
+LOG_FILE = os.path.join(USER_DATA_DIR, "sound_matrix_activity.log")
 
 class ObfuscatedHiddenFileHandler(logging.FileHandler):
     def __init__(self, filename, mode='a', encoding='utf-8', delay=False):
