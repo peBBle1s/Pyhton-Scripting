@@ -33,23 +33,34 @@ class PebXGUI(ctk.CTk):
 
     def __init__(self):
         super().__init__()
+        
+        # --- NEW WINDOWS TASKBAR OVERRIDE (The Acid) ---
+        # Forces Windows to treat this as a unique app, revealing the logo on the taskbar
+        try:
+            myappid = 'pebx.signalmatrix.app.1.0'
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception as e:
+            logger.debug(f"Taskbar override bypassed: {e}")
+        # -----------------------------------------------
+
         self.title(f"{APP_NAME} — Signal Control")
         self.geometry("1000x720")
         self.configure(fg_color=BG_MAIN)
         self.resizable(False, False)
 
-        # Apply logo1 to the application window and taskbar
+        # --- THE PNG LOADER (The Vitamin) ---
         if os.path.exists(LOGO_APP):
             try:
                 from PIL import Image, ImageTk
-                # This forces Tkinter to accept ANY image format as an icon
+                # We MUST use iconphoto() for .png files, NOT iconbitmap()
                 img = ImageTk.PhotoImage(Image.open(LOGO_APP))
                 self.iconphoto(False, img)
-                logger.info("Application logo successfully mounted via PIL.")
+                logger.info("Application PNG logo successfully mounted.")
             except Exception as e:
-                logger.error(f"Failed to mount app logo: {e}")
+                logger.error(f"Failed to mount PNG logo: {e}")
         else:
-            logger.warning(f"App logo ({LOGO_APP}) missing. Using default.")
+            logger.warning(f"App logo ({LOGO_APP}) missing. Taskbar will use default.")
+        # ------------------------------------
 
         self.devices = {}
         self.apps = {}
@@ -57,6 +68,7 @@ class PebXGUI(ctk.CTk):
         self._pulse_running = False
         self.saved_app_routes = {}
         
+        # Memory for The Brain
         self.last_foreground_app = None
         self.auto_switch_enabled = ctk.BooleanVar(value=False)
 
@@ -64,6 +76,7 @@ class PebXGUI(ctk.CTk):
         self.refresh_all()
         self.load_state()
 
+        # Start background threads (Essential tracking loops)
         self.after(1500, self._periodic_status_update)
         self.after(2000, self._foreground_watcher_loop)
 
