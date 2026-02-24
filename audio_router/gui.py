@@ -1,3 +1,4 @@
+# gui.py
 import customtkinter as ctk
 import threading
 import time
@@ -13,8 +14,11 @@ from router import (
     get_current_default_device, enable_startup, is_startup_enabled
 )
 from foreground import get_foreground_process
-from profiles import get_profile, save_profile
-from config import APP_NAME, LOG_FILE, STATE_FILE, logger
+from profiles import (
+    get_profile, save_profile, add_app_to_profile, apply_profile, 
+    BASE_PROFILES, get_custom_profiles, create_custom_profile, delete_custom_profile
+)
+from config import APP_NAME, LOG_FILE, STATE_FILE, LOGO_APP, logger
 
 # Theme & colors
 ctk.set_appearance_mode("dark")
@@ -29,10 +33,23 @@ class PebXGUI(ctk.CTk):
 
     def __init__(self):
         super().__init__()
-        self.title("PebX — Signal Control")
-        self.geometry("1000x640") # Slightly taller to fit new buttons
+        self.title(f"{APP_NAME} — Signal Control")
+        self.geometry("1000x720")
         self.configure(fg_color=BG_MAIN)
         self.resizable(False, False)
+
+        # Apply logo1 to the application window and taskbar
+        if os.path.exists(LOGO_APP):
+            try:
+                from PIL import Image, ImageTk
+                # This forces Tkinter to accept ANY image format as an icon
+                img = ImageTk.PhotoImage(Image.open(LOGO_APP))
+                self.iconphoto(False, img)
+                logger.info("Application logo successfully mounted via PIL.")
+            except Exception as e:
+                logger.error(f"Failed to mount app logo: {e}")
+        else:
+            logger.warning(f"App logo ({LOGO_APP}) missing. Using default.")
 
         self.devices = {}
         self.apps = {}
@@ -40,7 +57,6 @@ class PebXGUI(ctk.CTk):
         self._pulse_running = False
         self.saved_app_routes = {}
         
-        # Memory for The Brain
         self.last_foreground_app = None
         self.auto_switch_enabled = ctk.BooleanVar(value=False)
 
@@ -48,9 +64,8 @@ class PebXGUI(ctk.CTk):
         self.refresh_all()
         self.load_state()
 
-        # Start background threads
         self.after(1500, self._periodic_status_update)
-        self.after(2000, self._foreground_watcher_loop) # Start The Brain
+        self.after(2000, self._foreground_watcher_loop)
 
     # ---------- Build UI ----------
     def build_ui(self):
@@ -84,7 +99,7 @@ class PebXGUI(ctk.CTk):
         tab_routing.columnconfigure(0, weight=1)
         tab_routing.columnconfigure(1, weight=1)
 
-        # GLOBAL PANEL
+        # 1. GLOBAL PANEL
         global_panel = ctk.CTkFrame(tab_routing, fg_color=BG_PANEL, corner_radius=8, border_width=1, border_color=BORDER)
         global_panel.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
 
@@ -95,7 +110,7 @@ class PebXGUI(ctk.CTk):
 
         ctk.CTkButton(global_panel, text="APPLY DEVICE", fg_color=ACCENT, hover_color="#00B8CC", text_color="black", command=self._apply_global_device_with_pulse).pack(pady=20, padx=30, fill="x")
 
-        # APP PANEL
+        # 2. APP PANEL
         app_panel = ctk.CTkFrame(tab_routing, fg_color=BG_PANEL, corner_radius=8, border_width=1, border_color=BORDER)
         app_panel.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
@@ -109,20 +124,52 @@ class PebXGUI(ctk.CTk):
 
         ctk.CTkButton(app_panel, text="APPLY ROUTE", fg_color=ACCENT, hover_color="#00B8CC", text_color="black", command=self._apply_app_with_pulse).pack(pady=10, padx=30, fill="x")
 
-        # BRAIN TOGGLES
-        self.brain_toggle = ctk.CTkSwitch(app_panel, text="Enable Smart Brain (Auto-Switch)", variable=self.auto_switch_enabled, progress_color="#4CAF50")
+        self.brain_toggle = ctk.CTkSwitch(app_panel, text="Enable Smart Brain (Auto-Switch)  [WORK IN PROGRESS]", text_color="#FFA500", variable=self.auto_switch_enabled, progress_color="#4CAF50")
         self.brain_toggle.pack(pady=5, padx=30, fill="x")
 
         ctk.CTkButton(app_panel, text="SAVE AS AUTO-PROFILE", fg_color="#4CAF50", hover_color="#45a049", text_color="black", command=self._save_auto_profile_with_pulse).pack(pady=(5, 15), padx=30, fill="x")
 
-        # LIVE REPORTS TAB
+        # 3. PROFILE MATRIX BUILDER
+        self.profile_frame = ctk.CTkFrame(tab_routing, fg_color=BG_PANEL, border_color=BORDER, border_width=1)
+        self.profile_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=10, sticky="nsew")
+        
+        ctk.CTkLabel(self.profile_frame, text="PROFILE MATRIX BUILDER", font=("Segoe UI", 14, "bold"), text_color=ACCENT).pack(pady=(10, 5))
+        
+        prof_row = ctk.CTkFrame(self.profile_frame, fg_color="transparent")
+        prof_row.pack(pady=5, fill="x", padx=10)
+        
+        ctk.CTkLabel(prof_row, text="Select Profile:").pack(side="left", padx=(10, 5))
+        
+        self.profile_name_entry = ctk.CTkComboBox(prof_row, values=BASE_PROFILES, width=130)
+        self.profile_name_entry.pack(side="left", padx=5)
+        
+        self.btn_add_prof = ctk.CTkButton(prof_row, text="+", width=30, fg_color=ACCENT, text_color="black", hover_color="#00B8CC", command=self.gui_create_profile)
+        self.btn_add_prof.pack(side="left", padx=2)
+        self.btn_del_prof = ctk.CTkButton(prof_row, text="-", width=30, fg_color="#FF3B30", hover_color="#CC2E26", command=self.gui_delete_profile)
+        self.btn_del_prof.pack(side="left", padx=2)
+        
+        ctk.CTkLabel(prof_row, text="Target App:").pack(side="left", padx=(15, 5))
+        self.profile_app_dropdown = ctk.CTkComboBox(prof_row, values=["No Apps"], width=160)
+        self.profile_app_dropdown.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(prof_row, text="Assign Device:").pack(side="left", padx=(15, 5))
+        self.profile_device_dropdown = ctk.CTkComboBox(prof_row, values=["No Devices"], width=180)
+        self.profile_device_dropdown.pack(side="left", padx=5)
+        
+        btn_prof_row = ctk.CTkFrame(self.profile_frame, fg_color="transparent")
+        btn_prof_row.pack(pady=(10, 15))
+        
+        ctk.CTkButton(btn_prof_row, text="SAVE TO MATRIX", fg_color=ACCENT, text_color="black", hover_color="#00B8CC", command=self.save_to_profile_matrix).pack(side="left", padx=10)
+        ctk.CTkButton(btn_prof_row, text="TEST PROFILE NOW", border_color=ACCENT, border_width=1, fg_color="transparent", hover_color=BORDER, command=self.test_profile).pack(side="left", padx=10)
+
+        # 4. LIVE REPORTS TAB
         ctk.CTkLabel(tab_reports, text="SYSTEM AUDIT LOG (Last 15 Events)", text_color=ACCENT, font=("Segoe UI", 14, "bold")).pack(pady=(10, 5), anchor="w", padx=10)
         self.log_textbox = ctk.CTkTextbox(tab_reports, fg_color=BG_PANEL, text_color="#00FF41", font=("Consolas", 12), border_width=1, border_color=BORDER)
         self.log_textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         self.log_textbox.insert("1.0", "Waiting for telemetry...")
         self.log_textbox.configure(state="disabled")
 
-        # FOOTER
+        # 5. FOOTER
         footer = ctk.CTkFrame(self, fg_color=BG_PANEL, corner_radius=0, border_width=1, border_color=BORDER)
         footer.pack(fill="x", padx=20, pady=(0, 20))
         footer.columnconfigure((0, 1, 2, 3, 4), weight=1)
@@ -130,15 +177,68 @@ class PebXGUI(ctk.CTk):
         ctk.CTkButton(footer, text="MUTE", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1, border_color=BORDER, command=self._mute_and_pulse).grid(row=0, column=0, padx=5, pady=15, sticky="ew")
         ctk.CTkButton(footer, text="WINDOWS MIXER", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1, border_color=BORDER, command=open_windows_audio_settings).grid(row=0, column=1, padx=5, pady=15, sticky="ew")
         ctk.CTkButton(footer, text="REFRESH", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1, border_color=BORDER, command=self.refresh_all).grid(row=0, column=2, padx=5, pady=15, sticky="ew")
-        
         self.autostart_toggle = ctk.CTkButton(footer, text="Auto-Start: Checking...", fg_color=BG_PANEL, hover_color=ACCENT, border_width=1, border_color=BORDER, command=self._toggle_autostart)
         self.autostart_toggle.grid(row=0, column=3, padx=5, pady=15, sticky="ew")
-        
         ctk.CTkButton(footer, text="COLLECT LOGS", fg_color="#FF3B30", hover_color="#CC2E26", border_width=1, border_color=BORDER, text_color="white", command=self._extract_diagnostic_report).grid(row=0, column=4, padx=5, pady=15, sticky="ew")
+
+    # ---------- Custom Profile Management ----------
+    def gui_create_profile(self):
+        dialog = ctk.CTkInputDialog(text="Enter new Profile Name:", title="Create Custom Profile")
+        name = dialog.get_input()
+        
+        if name:
+            success, msg = create_custom_profile(name)
+            if success:
+                self.refresh_profiles()
+                self.profile_name_entry.set(name)
+                self._update_live_reports()
+            else:
+                messagebox.showwarning("Creation Blocked", msg)
+
+    def gui_delete_profile(self):
+        target = self.profile_name_entry.get()
+        if target in BASE_PROFILES:
+            messagebox.showwarning("Deletion Blocked", "Core base profiles cannot be deleted.")
+            return
+            
+        confirm = messagebox.askyesno("Confirm Deletion", f"Are you sure you want to permanently delete the '{target}' profile?")
+        if confirm:
+            success, msg = delete_custom_profile(target)
+            if success:
+                self.refresh_profiles()
+                self._update_live_reports()
+            else:
+                messagebox.showerror("Error", msg)
+
+    def refresh_profiles(self):
+        all_profiles = BASE_PROFILES + get_custom_profiles()
+        self.profile_name_entry.configure(values=all_profiles)
+        
+        if self.profile_name_entry.get() not in all_profiles:
+            self.profile_name_entry.set(all_profiles[0])
+
+    # ---------- Profile Matrix Execution ----------
+    def save_to_profile_matrix(self):
+        profile_name = self.profile_name_entry.get()
+        app_name = self.profile_app_dropdown.get()
+        device_name = self.profile_device_dropdown.get()
+        
+        if app_name in self.apps and device_name in self.devices:
+            exe_name = self.apps[app_name]
+            device_id = self.devices[device_name]
+            add_app_to_profile(profile_name, exe_name, device_id)
+            messagebox.showinfo("Matrix Updated", f"Assigned '{exe_name}' to '{device_name}' under the '{profile_name}' profile.")
+            self._update_live_reports()
+        else:
+            messagebox.showwarning("Invalid Matrix", "Please ensure an active app and valid device are selected.")
+
+    def test_profile(self):
+        profile_name = self.profile_name_entry.get()
+        apply_profile(profile_name, set_app_device)
+        self._pulse_animation()
 
     # ---------- THE BRAIN (Foreground Watcher) ----------
     def _foreground_watcher_loop(self):
-        """Monitors the active window and automatically routes audio if a profile exists."""
         try:
             if self.auto_switch_enabled.get():
                 active_exe = get_foreground_process()
@@ -153,7 +253,7 @@ class PebXGUI(ctk.CTk):
         except Exception as e:
             logger.debug(f"Brain loop error: {e}")
         finally:
-            self.after(2000, self._foreground_watcher_loop) # Check every 2 seconds
+            self.after(2000, self._foreground_watcher_loop) 
 
     def _save_auto_profile_with_pulse(self):
         app_name = self.app_dropdown.get()
@@ -330,6 +430,7 @@ class PebXGUI(ctk.CTk):
         logger.info("Manual refresh triggered by user.")
         self.refresh_devices()
         self.refresh_apps()
+        self.refresh_profiles()
         self._update_autostart_label()
         self._update_live_reports()
         self.save_state()
@@ -340,21 +441,30 @@ class PebXGUI(ctk.CTk):
             names = list(self.devices.keys())
             self.global_device_dropdown.configure(values=names)
             self.app_device_dropdown.configure(values=names)
+            self.profile_device_dropdown.configure(values=names)
+            
             if self.global_device_dropdown.get() not in names: self.global_device_dropdown.set(names[0])
             if self.app_device_dropdown.get() not in names: self.app_device_dropdown.set(names[0])
+            if self.profile_device_dropdown.get() not in names: self.profile_device_dropdown.set(names[0])
         else:
             self.global_device_dropdown.configure(values=["No Devices"])
             self.app_device_dropdown.configure(values=["No Devices"])
+            self.profile_device_dropdown.configure(values=["No Devices"])
 
     def refresh_apps(self):
         self.apps = scan_audio_apps()
         if self.apps:
             names = list(self.apps.keys())
             self.app_dropdown.configure(values=names)
+            self.profile_app_dropdown.configure(values=names)
+            
             if self.app_dropdown.get() not in names: self.app_dropdown.set(names[0])
+            if self.profile_app_dropdown.get() not in names: self.profile_app_dropdown.set(names[0])
         else:
             self.app_dropdown.configure(values=["No Active Apps"])
             self.app_dropdown.set("No Active Apps")
+            self.profile_app_dropdown.configure(values=["No Active Apps"])
+            self.profile_app_dropdown.set("No Active Apps")
 
     def apply_global_device(self):
         selected = self.global_device_dropdown.get()

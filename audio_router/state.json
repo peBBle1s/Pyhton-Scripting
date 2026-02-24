@@ -1,6 +1,4 @@
 {
     "global_device": "Plantronics Blackwire 3220 Series",
-    "app_routes": {
-        "Brave Browser": "Realtek(R) Audio"
-    }
+    "app_routes": {}
 }

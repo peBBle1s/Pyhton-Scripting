@@ -1,18 +1,24 @@
+# config.py
 import os
 import logging
 import base64
 import ctypes
 
-APP_NAME = "PebX Audio Router"
+APP_NAME = "PebX Signal Matrix"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Core 'Vitamins' (Dependencies & Assets)
 SOUND_VOLUME_VIEW = os.path.join(BASE_DIR, "SoundVolumeView.exe")
+LOGO_APP = os.path.join(BASE_DIR, "logo1.jpg")   # Top-left window & Taskbar
+LOGO_TRAY = os.path.join(BASE_DIR, "logo2.png")  # System tray icon (can also be .ico)
+
+# Data Matrix Paths
 DEVICES_FILE = os.path.join(BASE_DIR, "devices.csv")
 PROFILES_FILE = os.path.join(BASE_DIR, "profiles.json")
 
-# -------------------- MEMORY & STEALTH SYSTEM --------------------
+# Memory & Stealth System
 STATE_FILE = os.path.join(BASE_DIR, "state.json")
-LOG_FILE = os.path.join(BASE_DIR, "peb_activity.audio.log")
+LOG_FILE = os.path.join(BASE_DIR, "sound_matrix_activity.log")
 
 class ObfuscatedHiddenFileHandler(logging.FileHandler):
     def __init__(self, filename, mode='a', encoding='utf-8', delay=False):
@@ -51,10 +57,9 @@ logging.basicConfig(
 
 logger = logging.getLogger(APP_NAME)
 
-# -------------------- DEPENDENCY VALIDATION --------------------
 def check_dependencies():
-    """Validates that essential routing components exist (Vitamin)."""
-    exists = os.path.exists(SOUND_VOLUME_VIEW)
-    if not exists:
+    """Validates that essential routing components are present."""
+    if not os.path.exists(SOUND_VOLUME_VIEW):
         logger.critical(f"Missing essential component: {SOUND_VOLUME_VIEW} not found.")
-    return exists
+        return False
+    return True

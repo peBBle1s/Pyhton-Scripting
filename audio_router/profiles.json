@@ -1,3 +1,13 @@
 {
-    "brave.exe": "{0.0.0.00000000}.{c23b9533-805e-46e9-abb1-40ddc33861ba}"
+    "brave.exe": "{0.0.0.00000000}.{c23b9533-805e-46e9-abb1-40ddc33861ba}",
+    "Gaming": {
+        "Discord.exe": "{0.0.0.00000000}.{307abe44-551d-4aaf-8ebb-2f7b24289480}",
+        "VALORANT-Win64-Shipping.exe": "{0.0.0.00000000}.{307abe44-551d-4aaf-8ebb-2f7b24289480}",
+        "brave.exe": "{0.0.0.00000000}.{c23b9533-805e-46e9-abb1-40ddc33861ba}"
+    },
+    "browsers": {
+        "brave.exe": "{0.0.0.00000000}.{c23b9533-805e-46e9-abb1-40ddc33861ba}",
+        "chrome.exe": "{0.0.0.00000000}.{c23b9533-805e-46e9-abb1-40ddc33861ba}",
+        "VALORANT-Win64-Shipping.exe": "{0.0.0.00000000}.{307abe44-551d-4aaf-8ebb-2f7b24289480}"
+    }
 }
