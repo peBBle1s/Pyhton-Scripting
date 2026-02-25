@@ -24,6 +24,7 @@ def scan_output_devices():
     devices = {}
     _generate_csv()
     try:
+        # UNIVERSAL FIX: utf-8-sig handles the BOM and prevents decoding crashes
         with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
@@ -42,6 +43,7 @@ def scan_output_devices():
 def get_current_default_device():
     _generate_csv()
     try:
+        # UPDATED: Using utf-8-sig for stable default device tracking
         with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
@@ -54,24 +56,32 @@ def get_current_default_device():
         logger.warning(f"Could not read current default device: {e}")
     return None
 
-# -------------------- APP SCAN --------------------
+# -------------------- APP SCAN (STEP 2: PID EXTRACTION) --------------------
 
 def scan_audio_apps():
     apps = {}
     _generate_csv()
     try:
+        # UPDATED: Using utf-8-sig and unique PID mapping
         with open(DEVICES_FILE, newline="", encoding="utf-8-sig") as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
-                if row.get("Type") == "Application" and row.get("Process Path"):
+                if row.get("Type") == "Application":
                     friendly_name = row.get("Name")
-                    process_path = row.get("Process Path")
-                    exe_name = os.path.basename(process_path) if process_path else None
-                    if friendly_name and exe_name:
-                        apps[friendly_name] = exe_name
-        logger.info(f"Successfully scanned {len(apps)} active audio applications.")
+                    process_id = row.get("Process ID")
+                    
+                    if friendly_name and process_id and process_id != "0":
+                        # Unique label to separate multiple instances (like Brave tabs)
+                        display_label = f"{friendly_name} (PID: {process_id})"
+                        
+                        process_path = row.get("Process Path")
+                        exe_name = os.path.basename(process_path) if process_path else friendly_name
+                        
+                        apps[display_label] = (exe_name, process_id)
+                        
+        logger.info(f"Metabolism: Identified {len(apps)} unique audio instances.")
     except Exception as e:
-        logger.error(f"App scan error: {e}")
+        logger.error(f"Surgical scan error: {e}")
     return apps
 
 # -------------------- GLOBAL SWITCH --------------------
@@ -89,9 +99,10 @@ def set_default_device(device_id):
     except Exception as e:
         logger.error(f"Failed to set global default device {device_id}: {e}")
 
-# -------------------- PER APP ROUTING --------------------
+# -------------------- PER APP ROUTING (STEP 2: PID SURGERY) --------------------
 
 def set_app_device(device_id, app_exe):
+    """Standard routing by EXE name (Legacy)."""
     try:
         for role in ["0", "1", "2"]:
             subprocess.run(
@@ -103,6 +114,20 @@ def set_app_device(device_id, app_exe):
         logger.info(f"Successfully routed '{app_exe}' to device ID: {device_id}")
     except Exception as e:
         logger.error(f"Failed to route '{app_exe}': {e}")
+
+def set_app_device_by_pid(device_id, pid):
+    """Surgical routing by Process ID (Step 2)."""
+    try:
+        for role in ["0", "1", "2"]:
+            subprocess.run(
+                [SOUND_VOLUME_VIEW, "/SetAppDefault", device_id, role, str(pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False
+            )
+        logger.info(f"Surgically routed PID {pid} to device ID: {device_id}")
+    except Exception as e:
+        logger.error(f"Failed to surgically route PID {pid}: {e}")
 
 # -------------------- MUTE / WINDOWS --------------------
 

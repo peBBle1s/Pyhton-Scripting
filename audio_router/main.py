@@ -31,6 +31,10 @@ if __name__ == "__main__":
         app = PebXGUI()
         app.title(f"{APP_NAME} — Signal Control")
         
+        # --- LEVEL 3: STEP 1 (METABOLISM START) ---
+        # This activates the hardware listener so it can auto-refresh
+        app.start_device_watchdog()
+        
         # Start the hotkey tracker in a daemon thread so it closes with the app
         hk_thread = threading.Thread(target=run_hotkey_listener, daemon=True)
         hk_thread.start()
